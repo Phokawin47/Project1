@@ -1,6 +1,6 @@
 import torch
 from PIL import Image
-from torchvision import os
+import os
 from torchvision import transforms
 from torch.utils.data import Dataset, DataLoader, random_split
 
