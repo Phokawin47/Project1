@@ -2,3 +2,5 @@
 
 torch
 matplotlib
+torchvision
+pillow
