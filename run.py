@@ -161,11 +161,12 @@ def _build_datasets(cfg: dict, data_cfg: dict, train_cfg: dict, logger: TextLogg
                 return ds, False
 
     # Build train dataset
-    train_full, _ = make_ds(root_dir_value=None, fixed=False)
+    train_full, _ = make_ds(root_dir_value=args.get("root_dir"), fixed=False)
+
 
     # Case A: separate val_root_dir
     if val_root_dir:
-        val_full, need_wrap = make_ds(root_dir_value=val_root_dir, fixed=True)
+        val_full, need_wrap = make_ds(root_dir_value=args.get("root_dir"), fixed=True)
         if need_wrap and val_fixed_noise:
             val_full = FixedNoiseWrapper(val_full, fixed_seed=val_fixed_seed)
         logger.log(
@@ -204,13 +205,32 @@ def main():
     cfg = deep_update(cfg, parse_overrides(args.override))
 
     set_seed(cfg.get("seed", None))
+    cfg["training"] = _normalize_training_cfg(cfg)
+    train_cfg = cfg["training"]
+    trainer_name = train_cfg.get("trainer")
 
     model_cfg = cfg["model"]
+
+    device = torch.device(train_cfg.get("device", "cuda") if torch.cuda.is_available() else "cpu" )
     data_cfg = cfg["data"]
-    train_cfg = _normalize_training_cfg(cfg)
+
     out_cfg = cfg.get("output", {})
 
-    model_name = model_cfg["name"]
+    if trainer_name == "gan_denoise":
+        G_cfg = cfg["model"]["generator"]
+        D_cfg = cfg["model"]["discriminator"]
+
+        G = MODELS.get(G_cfg["name"])(**G_cfg["args"]).to(device)
+        D = MODELS.get(D_cfg["name"])(**D_cfg["args"]).to(device)
+    else:
+        model_name = model_cfg["name"]
+
+    if "name" in model_cfg:
+        model_name = model_cfg["name"]
+    elif "generator" in model_cfg and "discriminator" in model_cfg:
+        model_name = f"GAN_{model_cfg['generator']['name']}_{model_cfg['discriminator']['name']}"
+    else:
+        model_name = "unknown_model"
     run_dir = make_run_dir(Path(out_cfg.get("runs_root", "runs")), model_name, out_cfg.get("exp_name", None), cfg)
 
     logger = TextLogger(log_path=run_dir / "train.log.txt", jsonl_path=run_dir / "metrics.jsonl")
@@ -237,49 +257,75 @@ def main():
         pin_memory=bool(train_cfg.get("pin_memory", True)),
     )
 
-    model_cls = MODELS.get(model_name)
-    model = model_cls(**model_cfg.get("args", {}))
-    logger.log(f"Model: {model_name} | args={model_cfg.get('args', {})}")
+
+    device = train_cfg.get("device", "cuda")
+
+
+    if trainer_name == "gan_denoise":
+        G_cfg = cfg["model"]["generator"]
+        D_cfg = cfg["model"]["discriminator"]
+
+        G = MODELS.get(G_cfg["name"])(**G_cfg["args"]).to(device)
+        D = MODELS.get(D_cfg["name"])(**D_cfg["args"]).to(device)
+
+        logger.log(f"Model: GAN | G={G_cfg['name']} D={D_cfg['name']}")
+    else:
+        model_name = model_cfg["name"]
+        model_cls = MODELS.get(model_name)
+        model = model_cls(**model_cfg.get("args", {})).to(device)
+
+        logger.log(f"Model: {model_name} | args={model_cfg.get('args', {})}")
+
+
+
+
 
     loss_name = str(train_cfg.get("loss", "l1")).lower()
     criterion = torch.nn.MSELoss() if loss_name == "mse" else torch.nn.L1Loss()
 
-    if train_cfg.get("trainer") == "gan":
-        optimizer_G = build_optimizer(
-            model["G"], train_cfg["optimizer_G_cfg"]
-        )
-        optimizer_D = build_optimizer(
-            model["D"], train_cfg["optimizer_D_cfg"]
-        )
+    if trainer_name == "gan_denoise":
+        optimizer_G = build_optimizer(G, train_cfg["optimizer_G_cfg"])
+        optimizer_D = build_optimizer(D, train_cfg["optimizer_D_cfg"])
 
-        scheduler_G = build_scheduler(optimizer_G, train_cfg.get("scheduler_G_cfg", None))
-        scheduler_D = build_scheduler(optimizer_D, train_cfg.get("scheduler_D_cfg", None))
+        scheduler_G = build_scheduler(optimizer_G, train_cfg.get("scheduler_G_cfg"))
+        scheduler_D = build_scheduler(optimizer_D, train_cfg.get("scheduler_D_cfg"))
     else:
         optimizer = build_optimizer(model, train_cfg["optimizer_cfg"])
-        scheduler = build_scheduler(optimizer, train_cfg.get("scheduler_cfg", None))
+        scheduler = build_scheduler(optimizer, train_cfg.get("scheduler_cfg"))
 
 
-    trainer = TRAINERS.get(train_cfg.get("trainer", "denoise"))(device=train_cfg.get("device", "cuda"))
+
+    trainer = TRAINERS.get(trainer_name)(device=train_cfg.get("device", "cuda"),lambda_rec=train_cfg.get("lambda_rec", 100.0),
+    )
+
     use_amp = bool(train_cfg.get("amp", False))
 
     logger.log(f"Training: epochs={train_cfg['epochs']} bs={train_cfg['batch_size']} loss={loss_name} amp={use_amp}")
     logger.log(f"Optimizer: {train_cfg['optimizer_cfg']}")
     logger.log(f"Scheduler: {train_cfg.get('scheduler_cfg', {'name':'none'})}")
-    
-    if train_cfg.get("trainer") == "gan":
+    rec_loss_name = str(train_cfg.get("rec_loss", "l1")).lower()
+
+    if rec_loss_name == "mse":
+        rec_criterion = torch.nn.MSELoss()
+    else:
+        rec_criterion = torch.nn.L1Loss()
+
+    if trainer_name == "gan_denoise":
         res = trainer.fit(
-            model=model,
+            G=G,
+            D=D,
             train_loader=train_loader,
             val_loader=val_loader,
-            optimizer_G=optimizer_G,
-            optimizer_D=optimizer_D,
-            scheduler_G=scheduler_G,
-            scheduler_D=scheduler_D,
+            opt_G=optimizer_G,
+            opt_D=optimizer_D,
+            rec_criterion=rec_criterion,
             epochs=int(train_cfg["epochs"]),
             run_dir=run_dir,
             logger=logger,
+            scheduler_G=scheduler_G,
+            scheduler_D=scheduler_D,
             use_amp=use_amp,
-            early_stopping_patience=train_cfg.get("early_stopping_patience", None),
+            early_stopping_patience=train_cfg.get("early_stopping_patience"),
         )
     else:
         res = trainer.fit(

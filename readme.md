@@ -29,7 +29,7 @@ Dncnn:
 python run.py --config configs/dncnn_rician.json --override training.epochs=40 training.optimizer_cfg.args.lr=0.0005
 
 GAN:
-python run.py --config configs/gan_rician.json --override training.epochs=40 training.optimizer_G_cfg.args.lr=0.0005 training.optimizer_D_cfg.args.lr=0.0005
+python run.py --config configs/gan_rician.json --override training.epochs=40 training.optimizer_G_cfg.args.lr=0.0005 training.optimizer_D_cfg.args.lr=0.0005 
 ```
 
 
