@@ -4,3 +4,5 @@ torch
 matplotlib
 torchvision
 pillow
+torchsummary
+tqdm
