@@ -1,6 +1,7 @@
 from __future__ import annotations
 import time
 from pathlib import Path
+
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -9,15 +10,18 @@ from tqdm import tqdm
 from ..registry import TRAINERS
 from ..utils.metrics import psnr, ssim
 
+
 @TRAINERS.register("gan_denoise")
 class GANDenoiseTrainer:
-    def __init__(self, device: str = "cuda", lambda_rec: float = 100.0):
-        """
-        lambda_rec: weight ของ reconstruction loss (L1/MSE)
-        """
+    def __init__(
+        self,
+        device: str = "cuda",
+        lambda_rec: float = 100.0,
+    ):
         self.device = torch.device(device if torch.cuda.is_available() else "cpu")
         self.lambda_rec = lambda_rec
         self.adv_criterion = nn.BCELoss()
+
     def _run_epoch(
         self,
         G: nn.Module,
@@ -50,9 +54,6 @@ class GANDenoiseTrainer:
                 clean = clean.to(self.device, non_blocking=True)
                 bs = noisy.size(0)
 
-                valid = torch.ones((bs, 1), device=self.device)
-                fake = torch.zeros((bs, 1), device=self.device)
-
                 # ============================
                 #  Train Discriminator
                 # ============================
@@ -60,13 +61,16 @@ class GANDenoiseTrainer:
                     opt_D.zero_grad(set_to_none=True)
 
                     with torch.autocast(
-                        device_type=str(self.device).split(":")[0],
+                        device_type=self.device.type,
                         enabled=use_amp,
                     ):
                         fake_img = G(noisy).detach()
 
                         pred_real = D(noisy, clean)
                         pred_fake = D(noisy, fake_img)
+
+                        valid = torch.ones_like(pred_real)
+                        fake = torch.zeros_like(pred_fake)
 
                         loss_real = self.adv_criterion(pred_real, valid)
                         loss_fake = self.adv_criterion(pred_fake, fake)
@@ -79,7 +83,7 @@ class GANDenoiseTrainer:
                         loss_D.backward()
                         opt_D.step()
                 else:
-                    loss_D = torch.tensor(0.0)
+                    loss_D = torch.tensor(0.0, device=self.device)
 
                 # ============================
                 #  Train Generator
@@ -88,11 +92,13 @@ class GANDenoiseTrainer:
                     opt_G.zero_grad(set_to_none=True)
 
                 with torch.autocast(
-                    device_type=str(self.device).split(":")[0],
+                    device_type=self.device.type,
                     enabled=use_amp,
                 ):
                     fake_img = G(noisy)
                     pred_fake = D(noisy, fake_img)
+
+                    valid = torch.ones_like(pred_fake)
 
                     loss_adv = self.adv_criterion(pred_fake, valid)
                     loss_rec = rec_criterion(fake_img, clean)
@@ -108,13 +114,14 @@ class GANDenoiseTrainer:
                         opt_G.step()
 
                 # ============================
-                #  Metrics (Generator output)
+                #  Metrics
                 # ============================
                 total_g += float(loss_G.item()) * bs
                 total_d += float(loss_D.item()) * bs
 
                 fake_c = fake_img.clamp(0.0, 1.0)
                 clean_c = clean.clamp(0.0, 1.0)
+
                 total_psnr += psnr(fake_c, clean_c) * bs
                 total_ssim += ssim(fake_c, clean_c) * bs
                 n += bs
@@ -125,6 +132,7 @@ class GANDenoiseTrainer:
             "psnr": total_psnr / max(1, n),
             "ssim": total_ssim / max(1, n),
         }
+
     def fit(
         self,
         G: nn.Module,
@@ -201,14 +209,15 @@ class GANDenoiseTrainer:
 
             logger.log(
                 f"Epoch {epoch:03d}/{epochs} | lr={cur_lr:.6g} | "
-                f"G={metrics['train_g_loss']:.4f} D={metrics['train_d_loss']:.4f} | "
-                f"PSNR={metrics['val_psnr']:.3f} SSIM={metrics['val_ssim']:.4f} | "
+                f"G={metrics['train_g_loss']:.4f} "
+                f"D={metrics['train_d_loss']:.4f} | "
+                f"PSNR={metrics['val_psnr']:.3f} "
+                f"SSIM={metrics['val_ssim']:.4f} | "
                 f"{dt:.1f}s"
             )
             logger.log_metrics(metrics)
 
-            key = save_best
-            cur = metrics[key]
+            cur = metrics[save_best]
             improved = (cur > best) if mode == "max" else (cur < best)
 
             if improved:
@@ -222,7 +231,7 @@ class GANDenoiseTrainer:
                     },
                     best_path,
                 )
-                logger.log(f"✓ Saved best GAN checkpoint ({key}={best:.4f})")
+                logger.log(f"✓ Saved best GAN checkpoint ({save_best}={best:.4f})")
             else:
                 bad_epochs += 1
 

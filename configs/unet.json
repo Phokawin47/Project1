@@ -2,7 +2,7 @@
   "seed": 42,
   "split_seed": 1234,
   "model": {
-    "name": "Unet",
+    "name": "unet",
     "args": {
       "in_channels": 1,
       "out_channels": 1,
