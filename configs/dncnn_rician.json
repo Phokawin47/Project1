@@ -1,0 +1,68 @@
+{
+  "seed": 42,
+  "split_seed": 1234,
+  "model": {
+    "name": "dncnn",
+    "args": {
+      "depth": 20,
+      "num_channels": 64,
+      "image_channels": 1
+    }
+  },
+  "data": {
+    "name": "brain_tumor_dataset",
+    "args": {
+      "root_dir": "src/BrainTumorDataset/Training",
+      "val_root_dir": "src/BrainTumorDataset/Testing",
+      "image_size": [
+        288,
+        288
+      ],
+      "noise_factor": 0.2,
+      "noise_range": [
+        0.2,
+        0.4
+      ],
+      "noise_sampling": "uniform",
+      "use_grayscale": true,
+      "return_noise_level": false,
+      "val_fixed_noise": true,
+      "val_fixed_seed": 999,
+      "seed": 123
+    }
+  },
+  "training": {
+    "trainer": "denoise",
+    "device": "cuda",
+    "epochs": 500,
+    "batch_size": 16,
+    "loss": "mse",
+    "val_ratio": 0.2,
+    "num_workers": 4,
+    "pin_memory": true,
+    "amp": false,
+    "early_stopping_patience": 20,
+    "optimizer_cfg": {
+      "name": "sgd",
+      "args": {
+        "lr": 0.001,
+        "momentum": 0.9,
+        "weight_decay": 0.0001
+      }
+    },
+    "scheduler_cfg": {
+      "name": "multistep",
+      "args": {
+        "milestones": [
+          10,
+          20
+        ],
+        "gamma": 0.1
+      }
+    }
+  },
+  "output": {
+    "runs_root": "runs",
+    "exp_name": "dncnn_schedule"
+  }
+}
