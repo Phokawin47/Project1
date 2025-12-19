@@ -96,5 +96,5 @@ class BrainTumorDataset(Dataset):
         noisy_image = torch.clamp(noisy_image, 0., 1.)
 
         if self.return_noise_level:
-            return noisy_image, clean_image, float(sigma)
+            return noisy_image, clean_image, torch.tensor(sigma, dtype=torch.float32)
         return noisy_image, clean_image
