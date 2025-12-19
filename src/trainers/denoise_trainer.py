@@ -10,8 +10,13 @@ from ..utils.metrics import psnr, ssim
 
 @TRAINERS.register("denoise")
 class DenoiseTrainer:
-    def __init__(self, device: str = "cuda"):
+    def __init__(
+        self,
+        device: str = "cuda",
+        lambda_rec: float | None = None,  # <<< เพิ่มบรรทัดนี้
+    ):
         self.device = torch.device(device if torch.cuda.is_available() else "cpu")
+
 
     def _run_epoch(self, model, loader, optimizer=None, criterion=None, use_amp: bool = False, scaler=None):
         is_train = optimizer is not None
