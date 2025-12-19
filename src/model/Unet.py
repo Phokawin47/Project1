@@ -1,6 +1,6 @@
 from __future__ import annotations
-
 from typing import Optional
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -27,7 +27,7 @@ class DoubleConv(nn.Module):
         return self.net(x)
 
 
-@MODELS.register("Unet")  # <-- ต้องตรงกับ config: model.name
+@MODELS.register("unet")  # <-- ต้องตรงกับ config: model.name
 class UNetDenoise(nn.Module):
     def __init__(self, in_channels=1, out_channels=1, features=(64, 128, 256, 512)):
         super().__init__()

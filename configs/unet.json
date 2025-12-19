@@ -1,0 +1,65 @@
+{
+  "seed": 42,
+  "split_seed": 1234,
+  "model": {
+    "name": "unet",
+    "args": {
+      "in_channels": 1,
+      "out_channels": 1,
+      "features": [
+        64,
+        128,
+        256,
+        512
+      ]
+    }
+  },
+  "data": {
+    "name": "brain_tumor_dataset",
+    "args": {
+      "root_dir": "src/BrainTumorDataset/Training",
+      "val_root_dir": "src/BrainTumorDataset/Testing",
+      "image_size": [
+        288,
+        288
+      ],
+      "noise_factor": 0.2,
+      "noise_range": [
+        0.1,
+        0.4
+      ],
+      "noise_sampling": "uniform",
+      "use_grayscale": true,
+      "return_noise_level": false,
+      "val_fixed_noise": true,
+      "val_fixed_seed": 999,
+      "seed": 123
+    }
+  },
+  "training": {
+    "trainer": "denoise",
+    "device": "cuda",
+    "epochs": 500,
+    "batch_size": 16,
+    "loss": "l1",
+    "val_ratio": 0.2,
+    "num_workers": 4,
+    "pin_memory": true,
+    "amp": false,
+    "early_stopping_patience": 20,
+    "optimizer_cfg": {
+      "name": "adamw",
+      "args": {
+        "lr": 0.0001,
+        "weight_decay": 0.0001
+      }
+    },
+    "scheduler_cfg": {
+      "name": "none"
+    }
+  },
+  "output": {
+    "runs_root": "runs",
+    "exp_name": "Unet_schedule"
+  }
+}

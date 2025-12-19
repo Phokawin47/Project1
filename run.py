@@ -18,7 +18,7 @@ from src.optim_schedulers import build_optimizer, build_scheduler
 # --- import modules for registration (keep these!) ---
 import src.model.dncnn               # noqa: F401
 import src.model.gan                 # noqa: F401  
-
+import src.model.Unet                # noqa: F401  
 
 
 
