@@ -17,6 +17,10 @@ from src.optim_schedulers import build_optimizer, build_scheduler
 
 # --- import modules for registration (keep these!) ---
 import src.model.dncnn               # noqa: F401
+import src.model.gan                 # noqa: F401  
+
+
+
 
 # IMPORTANT: import the dataset module you actually use in your project.
 # If you use your own dataset file under src/data/, import it here.
@@ -28,6 +32,9 @@ except Exception:
     pass
 
 import src.trainers.denoise_trainer   # noqa: F401
+import src.trainers.gan_denoise_trainer      # noqa: F401  
+
+
 
 
 def make_run_dir(root: Path, model_name: str, exp_name: str | None, cfg: dict) -> Path:
@@ -237,8 +244,20 @@ def main():
     loss_name = str(train_cfg.get("loss", "l1")).lower()
     criterion = torch.nn.MSELoss() if loss_name == "mse" else torch.nn.L1Loss()
 
-    optimizer = build_optimizer(model, train_cfg["optimizer_cfg"])
-    scheduler = build_scheduler(optimizer, train_cfg.get("scheduler_cfg", None))
+    if train_cfg.get("trainer") == "gan":
+        optimizer_G = build_optimizer(
+            model["G"], train_cfg["optimizer_G_cfg"]
+        )
+        optimizer_D = build_optimizer(
+            model["D"], train_cfg["optimizer_D_cfg"]
+        )
+
+        scheduler_G = build_scheduler(optimizer_G, train_cfg.get("scheduler_G_cfg", None))
+        scheduler_D = build_scheduler(optimizer_D, train_cfg.get("scheduler_D_cfg", None))
+    else:
+        optimizer = build_optimizer(model, train_cfg["optimizer_cfg"])
+        scheduler = build_scheduler(optimizer, train_cfg.get("scheduler_cfg", None))
+
 
     trainer = TRAINERS.get(train_cfg.get("trainer", "denoise"))(device=train_cfg.get("device", "cuda"))
     use_amp = bool(train_cfg.get("amp", False))
@@ -246,23 +265,39 @@ def main():
     logger.log(f"Training: epochs={train_cfg['epochs']} bs={train_cfg['batch_size']} loss={loss_name} amp={use_amp}")
     logger.log(f"Optimizer: {train_cfg['optimizer_cfg']}")
     logger.log(f"Scheduler: {train_cfg.get('scheduler_cfg', {'name':'none'})}")
-
-    res = trainer.fit(
-        model=model,
-        train_loader=train_loader,
-        val_loader=val_loader,
-        optimizer=optimizer,
-        criterion=criterion,
-        epochs=int(train_cfg["epochs"]),
-        run_dir=run_dir,
-        logger=logger,
-        scheduler=scheduler,
-        use_amp=use_amp,
-        save_best=train_cfg.get("save_best", "val_loss"),
-        mode=train_cfg.get("save_best_mode", "min"),
-        early_stopping_patience=train_cfg.get("early_stopping_patience", None),
-    )
-    logger.log(f"Done. Best: {res}")
+    
+    if train_cfg.get("trainer") == "gan":
+        res = trainer.fit(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            optimizer_G=optimizer_G,
+            optimizer_D=optimizer_D,
+            scheduler_G=scheduler_G,
+            scheduler_D=scheduler_D,
+            epochs=int(train_cfg["epochs"]),
+            run_dir=run_dir,
+            logger=logger,
+            use_amp=use_amp,
+            early_stopping_patience=train_cfg.get("early_stopping_patience", None),
+        )
+    else:
+        res = trainer.fit(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            optimizer=optimizer,
+            criterion=criterion,
+            epochs=int(train_cfg["epochs"]),
+            run_dir=run_dir,
+            logger=logger,
+            scheduler=scheduler,
+            use_amp=use_amp,
+            save_best=train_cfg.get("save_best", "val_loss"),
+            mode=train_cfg.get("save_best_mode", "min"),
+            early_stopping_patience=train_cfg.get("early_stopping_patience", None),
+        )
+        logger.log(f"Done. Best: {res}")
 
 
 if __name__ == "__main__":

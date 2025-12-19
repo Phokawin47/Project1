@@ -1,0 +1,50 @@
+{
+  "seed": 42,
+  "split_seed": 1234,
+
+  "model": {
+    "name": "gan",
+    "args": {
+      "image_channels": 1,
+      "ngf": 64,
+      "ndf": 64
+    }
+  },
+
+  "data": {
+    "name": "brain_tumor_dataset",
+    "args": {
+      "root_dir": "src/BrainTumorDataset/Training",
+      "val_root_dir": "src/BrainTumorDataset/Testing",
+      "image_size": [288, 288],
+      "noise_factor": 0.2,
+      "noise_range": [0.2, 0.4],
+      "noise_sampling": "uniform",
+      "use_grayscale": true,
+      "val_fixed_noise": true,
+      "val_fixed_seed": 999
+    }
+  },
+
+  "training": {
+    "trainer": "gan",
+    "device": "cuda",
+    "epochs": 40,
+    "batch_size": 8,
+    "num_workers": 4,
+
+    "optimizer_G_cfg": {
+      "name": "adam",
+      "args": { "lr": 0.0002, "betas": [0.5, 0.999] }
+    },
+    "optimizer_D_cfg": {
+      "name": "adam",
+      "args": { "lr": 0.0002, "betas": [0.5, 0.999] }
+    }
+  },
+
+  "output": {
+    "runs_root": "runs",
+    "exp_name": "gan_rician"
+  }
+}
