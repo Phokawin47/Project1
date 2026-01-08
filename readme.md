@@ -51,3 +51,10 @@ To export sample image, run:
 ```bash
 python prepare_cc359_shards_288.py --export_npz processed\cc359_shards_288\CC0001.npz --export_out_dir exports --export_fmt png
 ```
+
+to export .npz file to image all run:
+```bash
+for %f in (processed\cc359_shards_288\*.npz) do (
+  python prepare_cc359_shards_288.py --export_npz %f --export_out_dir exports_all --export_fmt png
+)
+```
