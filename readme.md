@@ -7,9 +7,10 @@
 
 ## Run
 ```bash
-python run.py --config configs/unet_rician.json
-python run.py --config configs/ucx_rician.json
+python run.py --config configs/unet.json
 python run.py --config configs/dncnn_rician.json
+python run.py --config configs/gan_rician.json
+python run.py --config configs/armnet_rician.json.json
 ```
 
 ## DnCNN LR schedule (ตามที่ต้องการ)
