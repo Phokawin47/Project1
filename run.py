@@ -19,6 +19,7 @@ from src.optim_schedulers import build_optimizer, build_scheduler
 import src.model.dncnn               # noqa: F401
 import src.model.gan                 # noqa: F401  
 import src.model.Unet                # noqa: F401  
+import src.model.armnet
 
 
 
@@ -33,6 +34,7 @@ except Exception:
 
 import src.trainers.denoise_trainer   # noqa: F401
 import src.trainers.gan_denoise_trainer      # noqa: F401  
+import src.trainers.armnet_trainer
 
 
 
@@ -258,7 +260,7 @@ def main():
     )
 
 
-    device = train_cfg.get("device", "cuda")
+    # device = train_cfg.get("device", "cuda")
 
 
     if trainer_name == "gan_denoise":
@@ -294,9 +296,13 @@ def main():
         scheduler = build_scheduler(optimizer, train_cfg.get("scheduler_cfg"))
 
 
-
-    trainer = TRAINERS.get(trainer_name)(device=train_cfg.get("device", "cuda"),lambda_rec=train_cfg.get("lambda_rec", 100.0),
+    if trainer_name == "armnet_denoise":
+        trainer = TRAINERS.get(trainer_name)( 
+       device=train_cfg.get("device", "cuda"),
     )
+    else:
+        trainer = TRAINERS.get(trainer_name)(device=train_cfg.get("device", "cuda"),lambda_rec=train_cfg.get("lambda_rec", 100.0),
+        )
 
     use_amp = bool(train_cfg.get("amp", False))
 

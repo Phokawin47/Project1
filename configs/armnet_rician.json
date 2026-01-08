@@ -1,0 +1,69 @@
+{
+  "seed": 42,
+  "split_seed": 1234,
+
+  "model": {
+    "name": "armnet_mri_denoiser_paper",
+    "args": {
+      "image_channels": 1
+    }
+  },
+
+  "data": {
+    "name": "brain_tumor_dataset",
+    "args": {
+      "root_dir": "src/BrainTumorDataset/Training",
+      "val_root_dir": "src/BrainTumorDataset/Testing",
+      "image_size": [256, 256],
+
+      "noise_factor": 0.2,
+      "noise_range": [0.1, 0.4],
+      "noise_sampling": "uniform",
+
+      "use_grayscale": true,
+      "return_noise_level": false,
+
+      "val_fixed_noise": true,
+      "val_fixed_seed": 999,
+      "seed": 123
+    }
+  },
+
+  "training": {
+    "trainer": "armnet_denoise",
+    "device": "cuda",
+
+    "epochs": 500,
+    "batch_size": 8,
+    "val_ratio": 0.2,
+
+    "loss": "l1",
+    "num_workers": 4,
+    "pin_memory": true,
+
+    "amp": false,
+    "early_stopping_patience": 30,
+
+    "optimizer_cfg": {
+      "name": "adamw",
+      "args": {
+        "lr": 0.0001,
+        "weight_decay": 0.0001,
+        "betas": [0.9, 0.999]
+      }
+    },
+
+    "scheduler_cfg": {
+      "name": "cosine",
+      "args": {
+        "T_max": 500,
+        "eta_min": 0.000001
+      }
+    }
+  },
+
+  "output": {
+    "runs_root": "runs",
+    "exp_name": "ARMNet_MRI_Denoising_Paper"
+  }
+}
