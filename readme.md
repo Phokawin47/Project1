@@ -10,7 +10,7 @@
 python run.py --config configs/unet.json
 python run.py --config configs/dncnn_rician.json
 python run.py --config configs/gan_rician.json
-python run.py --config configs/armnet_rician.json.json
+python run.py --config configs/armnet_rician.json
 ```
 
 ## DnCNN LR schedule (ตามที่ต้องการ)
@@ -57,4 +57,5 @@ to export .npz file to image all run:
 for %f in (processed\cc359_shards_288\*.npz) do (
   python prepare_cc359_shards_288.py --export_npz %f --export_out_dir exports_all --export_fmt png
 )
+
 ```
