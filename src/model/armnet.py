@@ -182,18 +182,14 @@ class ADPBranch(nn.Module):
 
         self.adp_filter = AdaptiveLocalFilter()
 
-        # Three parallel ARM-Nets (num_layers=6)
         self.arm_filtered = ARMNet(image_channels, num_layers=6)
         self.arm_original = ARMNet(image_channels, num_layers=6)
-        self.arm_masked   = ARMNet(image_channels, num_layers=6)
 
-        # Fusion
         self.arm_fusion = ARMNet(64 * 2, num_layers=5)
 
-        # Residual & attention (separate ARM-Nets)
-        self.arm_attention = ARMNet(64, num_layers=5)
+        # 🔑 reconstruction head
+        self.recon = nn.Conv2d(64, image_channels, 3, padding=1)
 
-        self.residual = nn.Conv2d(64, image_channels, 3, padding=1)
         self.attention = nn.Sequential(
             nn.Conv2d(64, 1, 1),
             nn.Sigmoid(),
@@ -202,18 +198,16 @@ class ADPBranch(nn.Module):
     def forward(self, x, x_masked):
         x_adp = self.adp_filter(x_masked)
 
-        f1 = self.arm_filtered(x_adp)
-        f2 = self.arm_original(x)
+        f1 = self.arm_filtered(x_adp)   # [B,64,H,W]
+        f2 = self.arm_original(x)       # [B,64,H,W]
 
         x_c = torch.cat([f1, f2], dim=1)
+        fused = self.arm_fusion(x_c)    # [B,64,H,W]
 
-        x_fused = self.arm_fusion(x_c)
+        r_adp = self.recon(fused)       # ✅ [B,1,H,W]
+        w_adp = self.attention(fused)   # [B,1,H,W]
 
-        r_adp = x_fused
-        w_adp = self.attention(x_fused)
-
-        i_adp = x_adp + r_adp
-
+        i_adp = x_adp + r_adp           # image-space residual
         return i_adp, w_adp
 
 class OptimizableDCT(nn.Module):
@@ -237,9 +231,10 @@ class DCTBranch(nn.Module):
         self.arm_original = ARMNet(image_channels, num_layers=6)
 
         self.arm_fusion = ARMNet(64 * 3, num_layers=5)
-        self.arm_attention = ARMNet(64, num_layers=5)
 
-        self.residual = nn.Conv2d(64, image_channels, 3, padding=1)
+        # 🔑 reconstruction head
+        self.recon = nn.Conv2d(64, image_channels, 3, padding=1)
+
         self.attention = nn.Sequential(
             nn.Conv2d(64, 1, 1),
             nn.Sigmoid(),
@@ -253,15 +248,14 @@ class DCTBranch(nn.Module):
         f3 = self.arm_original(x)
 
         x_c = torch.cat([f1, f2, f3], dim=1)
+        fused = self.arm_fusion(x_c)     # [B,64,H,W]
 
-        fused = self.arm_fusion(x_c)
-
-        r_dct = fused
-
-        w_dct = self.arm_attention(fused)
+        r_dct = self.recon(fused)        # ✅ [B,1,H,W]
+        w_dct = self.attention(fused)    # [B,1,H,W]
 
         i_dct = lp + r_dct
         return i_dct, w_dct
+
 
 
 @MODELS.register("armnet_mri_denoiser_paper")

@@ -41,7 +41,7 @@
     "num_workers": 4,
     "pin_memory": true,
 
-    "amp": false,
+    "amp": true,
     "early_stopping_patience": 30,
 
     "optimizer_cfg": {
