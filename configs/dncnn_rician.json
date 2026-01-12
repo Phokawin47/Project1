@@ -12,22 +12,42 @@
   "data": {
     "name": "brain_tumor_dataset",
     "args": {
-      "root_dir": "src/BrainTumorDataset/Training",
-      "val_root_dir": "src/BrainTumorDataset/Testing",
-      "image_size": [
-        256,
-        256
-      ],
+      "root_dir": ["./exports_all", "./src/BrainTumorDataset"],
+
+      "split": "train",
+      "val_ratio": 0.2,
+      "split_seed": 1234,
+      "image_size": [256, 256],
+
       "noise_factor": 0.2,
-      "noise_range": [
-        0.2,
-        0.4
-      ],
+      "noise_range": [0.1, 0.4],
       "noise_sampling": "uniform",
+
       "use_grayscale": true,
       "return_noise_level": false,
-      "val_fixed_noise": true,
-      "val_fixed_seed": 999,
+
+      "fixed_noise": false,
+      "fixed_seed": 999,
+      "seed": 123
+    },
+
+    "val_args": {
+      "root_dir": ["./exports_all", "./src/BrainTumorDataset"],
+
+      "split": "val",
+      "val_ratio": 0.2,
+      "split_seed": 1234,
+      "image_size": [256, 256],
+
+      "noise_factor": 0.2,
+      "noise_range": [0.1, 0.4],
+      "noise_sampling": "uniform",
+
+      "use_grayscale": true,
+      "return_noise_level": false,
+
+      "fixed_noise": true,
+      "fixed_seed": 999,
       "seed": 123
     }
   },

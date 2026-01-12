@@ -61,6 +61,36 @@
     }
   },
 
+  "training": {
+    "trainer": "gan_denoise",
+    "device": "cuda",
+    "epochs": 500,
+    "batch_size": 8,
+    "num_workers": 4,
+    "pin_memory": true,
+
+    "lambda_rec": 100.0,
+
+    "rec_criterion": {
+      "name": "l1"
+    },
+
+    "optimizer_G_cfg": {
+      "name": "adam",
+      "args": {
+        "lr": 0.0002,
+        "betas": [0.5, 0.999]
+      }
+    },
+    "optimizer_D_cfg": {
+      "name": "adam",
+      "args": {
+        "lr": 0.0002,
+        "betas": [0.5, 0.999]
+      }
+    }
+  },
+
   "output": {
     "runs_root": "runs",
     "exp_name": "gan_rician"
