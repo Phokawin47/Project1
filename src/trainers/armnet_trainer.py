@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 from ..registry import TRAINERS
 from ..utils.metrics import psnr, ssim
+from ..utils.val_images import save_val_from_loader
 
 
 @TRAINERS.register("armnet_denoise")
@@ -70,6 +71,8 @@ class ARMNetDenoiseTrainer:
                 # -------------------------------------------------
                 with torch.autocast(device_type=device_type, enabled=use_amp and is_train):
                     pred = model(noisy)
+                    if isinstance(pred, (tuple, list)):
+                        pred = pred[0]
                     loss = criterion(pred, clean)
 
                 # -------------------------------------------------
@@ -122,6 +125,10 @@ class ARMNetDenoiseTrainer:
         save_best: str = "val_loss",
         mode: str = "min",
         early_stopping_patience: int | None = None,
+        # --- NEW: save val triplet images ---
+        save_val_images: bool = True,
+        val_image_every: int = 1,
+        val_image_max: int = 8,
     ) -> Dict[str, Any]:
 
         model = model.to(self.device)
@@ -130,7 +137,8 @@ class ARMNetDenoiseTrainer:
         ckpt_dir = run_dir / "checkpoints"
         ckpt_dir.mkdir(exist_ok=True)
 
-        scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+        scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+
 
         best_metric = float("inf") if mode == "min" else -float("inf")
         bad_epochs = 0
@@ -156,6 +164,22 @@ class ARMNetDenoiseTrainer:
                 use_amp=False,
                 scaler=None,
             )
+
+            # --- save val images: Original | Addnoise | Denoise ---
+            if save_val_images and (epoch % int(val_image_every) == 0):
+                try:
+                    out_dir = save_val_from_loader(
+                        forward_fn=lambda x: model(x),
+                        val_loader=val_loader,
+                        device=self.device,
+                        run_dir=run_dir,
+                        epoch=epoch,
+                        max_items=int(val_image_max),
+                        prefix="val",
+                    )
+                    logger.log(f"Saved val images -> {out_dir}")
+                except Exception as e:
+                    logger.log(f"[WARN] Save val images failed: {e}")
 
             if scheduler is not None:
                 scheduler.step()

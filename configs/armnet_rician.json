@@ -57,7 +57,7 @@
     "device": "cuda",
 
     "epochs": 500,
-    "batch_size": 8,
+    "batch_size": 4,
     "val_ratio": 0.2,
 
     "loss": "l1",
@@ -65,7 +65,7 @@
     "pin_memory": true,
 
     "amp": true,
-    "early_stopping_patience": 30,
+    "early_stopping_patience": 20,
 
     "optimizer_cfg": {
       "name": "adamw",

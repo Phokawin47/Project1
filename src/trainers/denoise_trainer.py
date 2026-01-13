@@ -1,22 +1,26 @@
 from __future__ import annotations
+
 import time
 from pathlib import Path
+
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+
 from ..registry import TRAINERS
 from ..utils.metrics import psnr, ssim
+from ..utils.val_images import save_val_from_loader
+
 
 @TRAINERS.register("denoise")
 class DenoiseTrainer:
     def __init__(
         self,
         device: str = "cuda",
-        lambda_rec: float | None = None,  # <<< เพิ่มบรรทัดนี้
+        lambda_rec: float | None = None,  # kept for compatibility
     ):
         self.device = torch.device(device if torch.cuda.is_available() else "cpu")
-
 
     def _run_epoch(self, model, loader, optimizer=None, criterion=None, use_amp: bool = False, scaler=None):
         is_train = optimizer is not None
@@ -28,6 +32,9 @@ class DenoiseTrainer:
         # ✅ สำคัญ: ปิด grad ตอน val
         grad_ctx = torch.enable_grad() if is_train else torch.no_grad()
         desc = "Train" if is_train else "Val"
+
+        device_type = "cuda" if self.device.type == "cuda" else "cpu"
+
         with grad_ctx:
             for batch in tqdm(loader, desc=desc, leave=False):
                 if len(batch) == 3:
@@ -41,9 +48,10 @@ class DenoiseTrainer:
                 if is_train:
                     optimizer.zero_grad(set_to_none=True)
 
-                # (จะใช้ amp กับ val ด้วยก็ได้)
-                with torch.autocast(device_type=str(self.device).split(":")[0], enabled=use_amp):
+                with torch.autocast(device_type=device_type, enabled=use_amp and is_train):
                     pred = model(noisy)
+                    if isinstance(pred, (tuple, list)):
+                        pred = pred[0]
                     loss = criterion(pred, clean)
 
                 if is_train:
@@ -55,16 +63,21 @@ class DenoiseTrainer:
                         loss.backward()
                         optimizer.step()
 
+                if n == 0 and (not is_train):  # รอบแรกของ val
+                    print("clean min/max:", float(clean.min()), float(clean.max()))
+                    print("noisy min/max:", float(noisy.min()), float(noisy.max()))
+
+
                 # metrics
-                total_loss += float(loss.item()) * noisy.size(0)
+                bs = noisy.size(0)
+                total_loss += float(loss.item()) * bs
                 pred_c = pred.clamp(0.0, 1.0)
                 clean_c = clean.clamp(0.0, 1.0)
-                total_psnr += psnr(pred_c, clean_c) * noisy.size(0)
-                total_ssim += ssim(pred_c, clean_c) * noisy.size(0)
-                n += noisy.size(0)
+                total_psnr += psnr(pred_c, clean_c) * bs
+                total_ssim += ssim(pred_c, clean_c) * bs
+                n += bs
 
-        return {"loss": total_loss/max(1,n), "psnr": total_psnr/max(1,n), "ssim": total_ssim/max(1,n)}
-
+        return {"loss": total_loss / max(1, n), "psnr": total_psnr / max(1, n), "ssim": total_ssim / max(1, n)}
 
     def fit(
         self,
@@ -81,13 +94,18 @@ class DenoiseTrainer:
         save_best: str = "val_loss",
         mode: str = "min",
         early_stopping_patience: int | None = None,
+        # --- NEW: save val triplet images ---
+        save_val_images: bool = True,
+        val_image_every: int = 1,
+        val_image_max: int = 8,
     ):
         model = model.to(self.device)
         run_dir.mkdir(parents=True, exist_ok=True)
         ckpt_dir = run_dir / "checkpoints"
         ckpt_dir.mkdir(exist_ok=True)
 
-        scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+        scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+
 
         best = float("inf") if mode == "min" else -float("inf")
         bad_epochs = 0
@@ -95,8 +113,40 @@ class DenoiseTrainer:
 
         for epoch in tqdm(range(1, epochs + 1), desc="Epochs"):
             t0 = time.time()
-            tr = self._run_epoch(model, train_loader, optimizer=optimizer, criterion=criterion, use_amp=use_amp, scaler=scaler)
-            va = self._run_epoch(model, val_loader, optimizer=None, criterion=criterion, use_amp=False, scaler=None)
+
+            tr = self._run_epoch(
+                model,
+                train_loader,
+                optimizer=optimizer,
+                criterion=criterion,
+                use_amp=use_amp,
+                scaler=scaler,
+            )
+            va = self._run_epoch(
+                model,
+                val_loader,
+                optimizer=None,
+                criterion=criterion,
+                use_amp=False,
+                scaler=None,
+            )
+
+            # --- save val images: Original | Addnoise | Denoise ---
+            if save_val_images and (epoch % int(val_image_every) == 0):
+                try:
+                    out_dir = save_val_from_loader(
+                        forward_fn=lambda x: model(x),
+                        val_loader=val_loader,
+                        device=self.device,
+                        run_dir=run_dir,
+                        epoch=epoch,
+                        max_items=int(val_image_max),
+                        prefix="val",
+                    )
+                    logger.log(f"Saved val images -> {out_dir}")
+                except Exception as e:
+                    logger.log(f"[WARN] Save val images failed: {e}")
+
             dt = time.time() - t0
 
             # scheduler step at end of epoch (common practice)

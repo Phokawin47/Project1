@@ -68,7 +68,7 @@
     "batch_size": 8,
     "num_workers": 4,
     "pin_memory": true,
-
+    "early_stopping_patience": 20,
     "lambda_rec": 100.0,
 
     "rec_criterion": {

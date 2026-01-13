@@ -37,7 +37,7 @@
     },
 
     "val_args": {
-      "root_dir": ["./exports_all", "./src/BrainTumorDataset"],
+      "root_dir": ["./src/BrainTumorDataset"],
 
       "split": "val",
       "val_ratio": 0.2,

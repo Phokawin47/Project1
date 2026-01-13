@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import time
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from tqdm import tqdm
 
 from ..registry import TRAINERS
 from ..utils.metrics import psnr, ssim
+from ..utils.val_images import save_val_from_loader
 
 
 @TRAINERS.register("gan_denoise")
@@ -64,7 +66,10 @@ class GANDenoiseTrainer:
                         device_type=self.device.type,
                         enabled=use_amp,
                     ):
-                        fake_img = G(noisy).detach()
+                        fake_img = G(noisy)
+                        if isinstance(fake_img, (tuple, list)):
+                            fake_img = fake_img[0]
+                        fake_img = fake_img.detach()
 
                         pred_real = D(noisy, clean)
                         pred_fake = D(noisy, fake_img)
@@ -96,6 +101,9 @@ class GANDenoiseTrainer:
                     enabled=use_amp,
                 ):
                     fake_img = G(noisy)
+                    if isinstance(fake_img, (tuple, list)):
+                        fake_img = fake_img[0]
+
                     pred_fake = D(noisy, fake_img)
 
                     valid = torch.ones_like(pred_fake)
@@ -151,6 +159,10 @@ class GANDenoiseTrainer:
         save_best: str = "val_psnr",
         mode: str = "max",
         early_stopping_patience: int | None = None,
+        # --- NEW: save val triplet images ---
+        save_val_images: bool = True,
+        val_image_every: int = 1,
+        val_image_max: int = 8,
     ):
         G.to(self.device)
         D.to(self.device)
@@ -159,7 +171,8 @@ class GANDenoiseTrainer:
         ckpt_dir = run_dir / "checkpoints"
         ckpt_dir.mkdir(exist_ok=True)
 
-        scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+        scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+
 
         best = -float("inf") if mode == "max" else float("inf")
         bad_epochs = 0
@@ -169,7 +182,9 @@ class GANDenoiseTrainer:
             t0 = time.time()
 
             tr = self._run_epoch(
-                G, D, train_loader,
+                G,
+                D,
+                train_loader,
                 opt_G=opt_G,
                 opt_D=opt_D,
                 rec_criterion=rec_criterion,
@@ -178,13 +193,31 @@ class GANDenoiseTrainer:
             )
 
             va = self._run_epoch(
-                G, D, val_loader,
+                G,
+                D,
+                val_loader,
                 opt_G=None,
                 opt_D=None,
                 rec_criterion=rec_criterion,
                 use_amp=False,
                 scaler=None,
             )
+
+            # --- save val images: Original | Addnoise | G(noisy) ---
+            if save_val_images and (epoch % int(val_image_every) == 0):
+                try:
+                    out_dir = save_val_from_loader(
+                        forward_fn=lambda x: G(x),
+                        val_loader=val_loader,
+                        device=self.device,
+                        run_dir=run_dir,
+                        epoch=epoch,
+                        max_items=int(val_image_max),
+                        prefix="val",
+                    )
+                    logger.log(f"Saved val images -> {out_dir}")
+                except Exception as e:
+                    logger.log(f"[WARN] Save val images failed: {e}")
 
             if scheduler_G is not None:
                 scheduler_G.step()

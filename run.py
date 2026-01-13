@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import inspect
 from datetime import datetime
 from pathlib import Path
 
@@ -166,6 +167,64 @@ def _build_datasets(cfg: dict, data_cfg: dict, train_cfg: dict, logger: TextLogg
     train_full, _ = make_ds(root_dir_value=args.get("root_dir"), fixed=False)
 
 
+
+    # -------------------------------------------------
+    # Prefer dataset-native split (if supported) to avoid mixing extra_train_dirs into val.
+    # This is critical for BrainTumorDataset: when split='train', it appends extra_train_dirs;
+    # if val dataset is mistakenly created with split='train', validation will include those extras.
+    # -------------------------------------------------
+    supports_split = False
+    try:
+        supports_split = 'split' in inspect.signature(ds_cls.__init__).parameters
+    except Exception:
+        supports_split = False
+    val_args_cfg = data_cfg.get('val_args', None)
+
+    if supports_split:
+        train_args = dict(args)
+        train_args['split'] = 'train'
+        # always random noise on train (unless user explicitly wants fixed_noise elsewhere)
+        train_args['fixed_noise'] = False
+
+        v_args = dict(args)
+        if isinstance(val_args_cfg, dict):
+            v_args.update(val_args_cfg)
+        v_args['split'] = 'val'
+
+        # fixed val noise (preferred: dataset supports fixed_noise/fixed_seed)
+        if val_fixed_noise:
+            v_args['fixed_noise'] = True
+            v_args['fixed_seed'] = val_fixed_seed
+        else:
+            v_args['fixed_noise'] = False
+            v_args['fixed_seed'] = val_fixed_seed
+
+        # if user provided val_root_dir (separate folder), honor it by overriding root_dir for val only
+        if val_root_dir:
+            v_args['root_dir'] = val_root_dir
+
+        try:
+            train_ds_native = ds_cls(**train_args)
+            try:
+                val_ds_native = ds_cls(**v_args)
+                need_wrap_native = False
+            except TypeError:
+                # dataset may not accept fixed_noise/fixed_seed -> build without and wrap
+                v_args2 = dict(v_args)
+                v_args2.pop('fixed_noise', None)
+                v_args2.pop('fixed_seed', None)
+                val_ds_native = ds_cls(**v_args2)
+                need_wrap_native = True
+
+            if need_wrap_native and val_fixed_noise:
+                val_ds_native = FixedNoiseWrapper(val_ds_native, fixed_seed=val_fixed_seed)
+
+            logger.log(f"Dataset: native split | fixed_val={val_fixed_noise} seed={val_fixed_seed}")
+            return train_ds_native, val_ds_native
+        except TypeError:
+            # fallback to manual split below
+            pass
+
     # Case A: separate val_root_dir
     if val_root_dir:
         val_full, need_wrap = make_ds(root_dir_value=args.get("root_dir"), fixed=True)
@@ -250,6 +309,7 @@ def main():
         shuffle=True,
         num_workers=int(train_cfg.get("num_workers", 0)),
         pin_memory=bool(train_cfg.get("pin_memory", True)),
+        drop_last=True
     )
     val_loader = DataLoader(
         val_ds,

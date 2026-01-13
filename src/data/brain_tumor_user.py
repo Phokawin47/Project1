@@ -7,6 +7,8 @@ import torch
 from PIL import Image
 from torchvision import transforms
 from torch.utils.data import Dataset
+import numpy as np
+import torch.nn.functional as F
 
 from ..registry import DATASETS
 
@@ -191,16 +193,42 @@ class BrainTumorDataset(Dataset):
 
         raise ValueError("noise_sampling ต้องเป็น 'uniform' หรือ 'log_uniform'")
 
-    def __getitem__(self, idx):
-        img_path = self.image_paths[idx]
-        image = Image.open(img_path)
+    def _read_image_tensor(self, img_path: str) -> torch.Tensor:
+        """
+        Return CHW float tensor in [0,1] resized to self.image_size.
+        Supports PNG 16-bit (I;16) and normal 8-bit images.
+        """
+        im = Image.open(img_path)
 
+        # ---- 16-bit PNG path ----
+        if im.mode in ("I;16", "I;16B", "I;16L"):
+            a = np.array(im, dtype=np.uint16).astype(np.float32) / 65535.0  # H,W in [0,1]
+            t = torch.from_numpy(a)[None, ...]  # 1,H,W
+            # resize with torch (preserve range)
+            t = F.interpolate(
+                t.unsqueeze(0),
+                size=tuple(self.image_size),
+                mode="bilinear",
+                align_corners=False,
+            ).squeeze(0)
+            return t.clamp(0.0, 1.0)
+
+        # ---- 8-bit fallback (เดิม) ----
         if self.use_grayscale:
-            image = image.convert("L")
+            im = im.convert("L")
         else:
-            image = image.convert("RGB")
+            im = im.convert("RGB")
 
-        clean_image = self.transform(image)
+        # ใช้ transform เดิมได้
+        t = self.transform(im)  # C,H,W in [0,1]
+        return t.clamp(0.0, 1.0)
+
+
+    def __getitem__(self, idx):
+        
+        img_path = self.image_paths[idx]
+        clean_image = self._read_image_tensor(img_path)
+
 
         # fixed_noise ต่อ sample (หมายเหตุ: idx จะเปลี่ยนตาม split)
         if self.fixed_noise:
