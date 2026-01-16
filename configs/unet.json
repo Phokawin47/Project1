@@ -20,9 +20,10 @@
       "root_dir": ["./exports_all", "./src/BrainTumorDataset"],
 
       "split": "train",
-      "val_ratio": 0.2,
+      "val_ratio": 0.1,
+      "test_ratio": 0.2,
       "split_seed": 1234,
-      "image_size": [256, 256],
+      "image_size": [128, 128],
 
       "noise_factor": 0.2,
       "noise_range": [0.1, 0.4],
@@ -37,12 +38,32 @@
     },
 
     "val_args": {
-      "root_dir": ["./src/BrainTumorDataset"],
+      "root_dir": ["./exports_all", "./src/BrainTumorDataset"],
 
       "split": "val",
-      "val_ratio": 0.2,
+      "val_ratio": 0.1,
+      "test_ratio": 0.2,
       "split_seed": 1234,
-      "image_size": [256, 256],
+      "image_size": [128, 128],
+
+      "noise_factor": 0.2,
+      "noise_range": [0.1, 0.4],
+      "noise_sampling": "uniform",
+
+      "use_grayscale": true,
+      "return_noise_level": false,
+
+      "fixed_noise": true,
+      "fixed_seed": 999,
+      "seed": 123
+    },
+    "test_args": {
+      "root_dir": ["./exports_all", "./src/BrainTumorDataset"],
+      "split": "test",
+      "val_ratio": 0.1,
+      "test_ratio": 0.2,
+      "split_seed": 1234,
+      "image_size": [128, 128],
 
       "noise_factor": 0.2,
       "noise_range": [0.1, 0.4],
@@ -64,7 +85,7 @@
     "loss": "l1",
     "val_ratio": 0.2,
     "num_workers": 4,
-    "pin_memory": true,
+    "pin_memory": false,
     "amp": false,
     "early_stopping_patience": 20,
     "optimizer_cfg": {
