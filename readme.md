@@ -14,6 +14,16 @@ python run.py --config configs/gan_rician.json
 python run.py --config configs/armnet_rician.json
 ```
 
+# Resume Train
+ใช้ last.pt
+```bash
+python resume_training_stateful.py --run_dir <Parth of model (runs/dncnn/20260117_002549_dncnn_schedule_7e17edcc)> --ckpt last --max_minutes 175
+```
+ใช้ best.pt
+```bash
+python resume_training_stateful.py --run_dir <Parth of model (runs/dncnn/20260117_002549_dncnn_schedule_7e17edcc)> --ckpt best --max_minutes 175
+```
+
 ## Dataset
 This template uses your uploaded `BrainTumorDataset` (Rician noise) via `src/data/brain_tumor_user.py`.
 
