@@ -20,8 +20,8 @@
       "split_seed": 1234,
       "image_size": [128, 128],
 
-      "noise_factor": 0.2,
-      "noise_range": [0.1, 0.2],
+      
+      "noise_range": [0.01, 0.2],
       "noise_sampling": "uniform",
 
       "use_grayscale": true,
@@ -41,8 +41,8 @@
       "split_seed": 1234,
       "image_size": [128, 128],
 
-      "noise_factor": 0.2,
-      "noise_range": [0.1, 0.2],
+      
+      "noise_range": [0.01, 0.2],
       "noise_sampling": "uniform",
 
       "use_grayscale": true,
@@ -60,8 +60,8 @@
       "split_seed": 1234,
       "image_size": [128, 128],
 
-      "noise_factor": 0.2,
-      "noise_range": [0.1, 0.2],
+      
+      "noise_range": [0.01, 0.2],
       "noise_sampling": "uniform",
 
       "use_grayscale": true,
