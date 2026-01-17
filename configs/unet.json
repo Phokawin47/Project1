@@ -77,15 +77,15 @@
       "seed": 123
     }
   },
-  
+
   "training": {
     "trainer": "denoise",
     "device": "cuda",
     "epochs": 500,
-    "batch_size": 16,
+    "batch_size": 32,
     "loss": "l1",
     "val_ratio": 0.2,
-    "num_workers": 4,
+    "num_workers": 0,
     "pin_memory": false,
     "amp": false,
     "early_stopping_patience": 20,

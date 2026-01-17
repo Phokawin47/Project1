@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
 
 import torch
 import torch.nn as nn
@@ -14,19 +14,104 @@ from ..utils.metrics import psnr, ssim
 from ..utils.val_images import save_val_from_loader
 
 
+def _device_type(device: torch.device) -> str:
+    return "cuda" if device.type == "cuda" else "cpu"
+
+
+def _safe_int(x, default: int = 0) -> int:
+    try:
+        return int(x)
+    except Exception:
+        return default
+
+
 @TRAINERS.register("armnet_denoise")
 class ARMNetDenoiseTrainer:
     def __init__(self, device="cuda", lambda_rec: float | None = None):
         if device == "cuda" and not torch.cuda.is_available():
             print("⚠ CUDA not available, fallback to CPU")
             device = "cpu"
-
         self.lambda_rec = lambda_rec
         self.device = torch.device(device)
 
-    # -------------------------------------------------
-    # One epoch (train or validation)
-    # -------------------------------------------------
+    def _save_ckpt(
+        self,
+        path: Path,
+        *,
+        model: nn.Module,
+        optimizer: torch.optim.Optimizer,
+        scheduler: Any | None,
+        scaler: torch.amp.GradScaler | None,
+        metrics: Dict[str, Any],
+        best_metric: float,
+        bad_epochs: int,
+    ) -> None:
+        ckpt = {
+            "model": model.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "scheduler": scheduler.state_dict() if scheduler is not None else None,
+            "scaler": scaler.state_dict() if scaler is not None else None,
+            "metrics": metrics,
+            "best_metric": float(best_metric),
+            "bad_epochs": int(bad_epochs),
+            "epoch": _safe_int(metrics.get("epoch", 0), 0),
+        }
+        torch.save(ckpt, path)
+
+    def _maybe_resume(
+        self,
+        resume_from: str | Path | None,
+        *,
+        model: nn.Module,
+        optimizer: torch.optim.Optimizer,
+        scheduler: Any | None,
+        scaler: torch.amp.GradScaler | None,
+        mode: str,
+        logger,
+    ):
+        if resume_from is None:
+            best_metric = float("inf") if mode == "min" else -float("inf")
+            return 0, best_metric, 0
+
+        resume_path = Path(resume_from)
+        if resume_path.is_dir():
+            resume_path = resume_path / "checkpoints" / "last.pt"
+
+        if not resume_path.exists():
+            logger.log(f"[WARN] resume_from not found: {resume_path} (start from scratch)")
+            best_metric = float("inf") if mode == "min" else -float("inf")
+            return 0, best_metric, 0
+
+        obj = torch.load(resume_path, map_location="cpu")
+
+        if "model" in obj:
+            model.load_state_dict(obj["model"])
+
+        if "optimizer" in obj and obj["optimizer"] is not None:
+            try:
+                optimizer.load_state_dict(obj["optimizer"])
+            except Exception as e:
+                logger.log(f"[WARN] optimizer resume failed: {e}")
+
+        if scheduler is not None and "scheduler" in obj and obj["scheduler"] is not None:
+            try:
+                scheduler.load_state_dict(obj["scheduler"])
+            except Exception as e:
+                logger.log(f"[WARN] scheduler resume failed: {e}")
+
+        if scaler is not None and "scaler" in obj and obj["scaler"] is not None:
+            try:
+                scaler.load_state_dict(obj["scaler"])
+            except Exception as e:
+                logger.log(f"[WARN] scaler resume failed: {e}")
+
+        start_epoch = _safe_int(obj.get("epoch", obj.get("metrics", {}).get("epoch", 0)), 0)
+        best_metric = float(obj.get("best_metric", float("inf") if mode == "min" else -float("inf")))
+        bad_epochs = _safe_int(obj.get("bad_epochs", 0), 0)
+
+        logger.log(f"Resumed from: {resume_path} (epoch={start_epoch}, best_metric={best_metric}, bad_epochs={bad_epochs})")
+        return start_epoch, best_metric, bad_epochs
+
     def _run_epoch(
         self,
         model: nn.Module,
@@ -34,9 +119,8 @@ class ARMNetDenoiseTrainer:
         criterion: nn.Module,
         optimizer: torch.optim.Optimizer | None = None,
         use_amp: bool = False,
-        scaler: torch.cuda.amp.GradScaler | None = None,
+        scaler: torch.amp.GradScaler | None = None,
     ) -> Dict[str, float]:
-
         is_train = optimizer is not None
         model.train(is_train)
 
@@ -47,14 +131,10 @@ class ARMNetDenoiseTrainer:
 
         grad_ctx = torch.enable_grad() if is_train else torch.no_grad()
         desc = "Train" if is_train else "Val"
-
-        device_type = "cuda" if self.device.type == "cuda" else "cpu"
+        dev_type = _device_type(self.device)
 
         with grad_ctx:
             for batch in tqdm(loader, desc=desc, leave=False):
-                # -------------------------------------------------
-                # Unpack batch
-                # -------------------------------------------------
                 if len(batch) == 3:
                     noisy, clean, _ = batch
                 else:
@@ -66,18 +146,12 @@ class ARMNetDenoiseTrainer:
                 if is_train:
                     optimizer.zero_grad(set_to_none=True)
 
-                # -------------------------------------------------
-                # Forward
-                # -------------------------------------------------
-                with torch.autocast(device_type=device_type, enabled=use_amp and is_train):
+                with torch.autocast(device_type=dev_type, enabled=use_amp and is_train):
                     pred = model(noisy)
                     if isinstance(pred, (tuple, list)):
                         pred = pred[0]
                     loss = criterion(pred, clean)
 
-                # -------------------------------------------------
-                # Backward
-                # -------------------------------------------------
                 if is_train:
                     if use_amp and scaler is not None:
                         scaler.scale(loss).backward()
@@ -87,15 +161,11 @@ class ARMNetDenoiseTrainer:
                         loss.backward()
                         optimizer.step()
 
-                # -------------------------------------------------
-                # Metrics (image domain)
-                # -------------------------------------------------
                 bs = noisy.size(0)
-                total_loss += loss.item() * bs
+                total_loss += float(loss.item()) * bs
 
                 pred_c = pred.clamp(0.0, 1.0)
                 clean_c = clean.clamp(0.0, 1.0)
-
                 total_psnr += psnr(pred_c, clean_c) * bs
                 total_ssim += ssim(pred_c, clean_c) * bs
 
@@ -107,9 +177,6 @@ class ARMNetDenoiseTrainer:
             "ssim": total_ssim / max(1, num_samples),
         }
 
-    # -------------------------------------------------
-    # Full training loop
-    # -------------------------------------------------
     def fit(
         self,
         model: nn.Module,
@@ -125,26 +192,33 @@ class ARMNetDenoiseTrainer:
         save_best: str = "val_loss",
         mode: str = "min",
         early_stopping_patience: int | None = None,
-        # --- NEW: save val triplet images ---
         save_val_images: bool = True,
         val_image_every: int = 1,
         val_image_max: int = 8,
+        resume_from: str | Path | None = None,
     ) -> Dict[str, Any]:
-
         model = model.to(self.device)
 
         run_dir.mkdir(parents=True, exist_ok=True)
         ckpt_dir = run_dir / "checkpoints"
         ckpt_dir.mkdir(exist_ok=True)
 
-        scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+        scaler = torch.amp.GradScaler("cuda", enabled=use_amp) if self.device.type == "cuda" else None
 
+        start_epoch, best_metric, bad_epochs = self._maybe_resume(
+            resume_from,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            scaler=scaler,
+            mode=mode,
+            logger=logger,
+        )
 
-        best_metric = float("inf") if mode == "min" else -float("inf")
-        bad_epochs = 0
         best_ckpt = ckpt_dir / "best.pt"
+        last_ckpt = ckpt_dir / "last.pt"
 
-        for epoch in tqdm(range(1, epochs + 1), desc="Epochs"):
+        for epoch in tqdm(range(start_epoch + 1, epochs + 1), desc="Epochs"):
             start_time = time.time()
 
             train_metrics = self._run_epoch(
@@ -165,7 +239,6 @@ class ARMNetDenoiseTrainer:
                 scaler=None,
             )
 
-            # --- save val images: Original | Addnoise | Denoise ---
             if save_val_images and (epoch % int(val_image_every) == 0):
                 try:
                     out_dir = save_val_from_loader(
@@ -185,7 +258,7 @@ class ARMNetDenoiseTrainer:
                 scheduler.step()
 
             elapsed = time.time() - start_time
-            lr = optimizer.param_groups[0]["lr"]
+            lr = float(optimizer.param_groups[0]["lr"])
 
             metrics = {
                 "epoch": epoch,
@@ -209,33 +282,45 @@ class ARMNetDenoiseTrainer:
                 f"ssim={metrics['val_ssim']:.4f} | "
                 f"{elapsed:.1f}s"
             )
-
             logger.log_metrics(metrics)
 
             key_val = metrics.get(save_best, metrics["val_loss"])
             improved = (key_val < best_metric) if mode == "min" else (key_val > best_metric)
 
             if improved:
-                best_metric = key_val
+                best_metric = float(key_val)
                 bad_epochs = 0
-                torch.save(
-                    {"model": model.state_dict(), "metrics": metrics},
+                self._save_ckpt(
                     best_ckpt,
+                    model=model,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    scaler=scaler,
+                    metrics=metrics,
+                    best_metric=best_metric,
+                    bad_epochs=bad_epochs,
                 )
                 logger.log(f"✓ Best checkpoint saved ({save_best}={best_metric:.6f})")
             else:
                 bad_epochs += 1
 
-            torch.save(
-                {"model": model.state_dict(), "metrics": metrics},
-                ckpt_dir / "last.pt",
+            self._save_ckpt(
+                last_ckpt,
+                model=model,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                scaler=scaler,
+                metrics=metrics,
+                best_metric=best_metric,
+                bad_epochs=bad_epochs,
             )
 
-            if early_stopping_patience is not None and bad_epochs >= early_stopping_patience:
+            if early_stopping_patience is not None and bad_epochs >= int(early_stopping_patience):
                 logger.log("Early stopping triggered.")
                 break
 
         return {
             "best_metric": best_metric,
             "best_checkpoint": str(best_ckpt),
+            "last_checkpoint": str(last_ckpt),
         }

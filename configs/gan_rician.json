@@ -27,7 +27,7 @@
       "val_ratio": 0.1,
       "test_ratio": 0.1,
       "split_seed": 1234,
-      "image_size": [128, 128],
+      "image_size": [256, 256],
 
       
       "noise_range": [0.01, 0.2],
@@ -48,7 +48,7 @@
       "val_ratio": 0.1,
       "test_ratio": 0.1,
       "split_seed": 1234,
-      "image_size": [128, 128],
+      "image_size": [256, 256],
 
       
       "noise_range": [0.01, 0.2],
@@ -67,7 +67,7 @@
       "val_ratio": 0.1,
       "test_ratio": 0.1,
       "split_seed": 1234,
-      "image_size": [128, 128],
+      "image_size": [256, 256],
 
       
       "noise_range": [0.01, 0.2],
@@ -86,8 +86,8 @@
     "trainer": "gan_denoise",
     "device": "cuda",
     "epochs": 500,
-    "batch_size": 8,
-    "num_workers": 4,
+    "batch_size": 32,
+    "num_workers": 0,
     "pin_memory": false,
     "early_stopping_patience": 20,
     "lambda_rec": 100.0,
