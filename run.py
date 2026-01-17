@@ -302,6 +302,28 @@ def _eval_denoise_model(model, loader, criterion, device, use_amp: bool):
     return total / max(1, n)
 
 
+
+def _save_test_artifacts(run_dir: Path, test_metrics: dict) -> None:
+    """
+    Persist test results in dedicated files under the run directory.
+      - test_metrics.json (latest)
+      - metrics.test.jsonl (append)
+    """
+    run_dir = Path(run_dir)
+    # JSON snapshot (latest)
+    try:
+        (run_dir / "test_metrics.json").write_text(json.dumps(test_metrics, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+    # JSONL append (history)
+    try:
+        with (run_dir / "metrics.test.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps(test_metrics) + "\n")
+    except Exception:
+        pass
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True, type=str)
@@ -493,6 +515,7 @@ def main():
                 f"G={test_metrics['test_g_loss']:.4f} D={test_metrics['test_d_loss']:.4f}"
             )
             logger.log_metrics(test_metrics)
+            _save_test_artifacts(run_dir, test_metrics)
         else:
             # For denoise/armnet trainers, easiest is to call their _run_epoch in val mode
             te = trainer._run_epoch(model, test_loader, criterion=criterion, optimizer=None, use_amp=False, scaler=None)
@@ -508,6 +531,7 @@ def main():
                 f"psnr={test_metrics['test_psnr']:.3f} ssim={test_metrics['test_ssim']:.4f}"
             )
             logger.log_metrics(test_metrics)
+            _save_test_artifacts(run_dir, test_metrics)
 
 
 if __name__ == "__main__":

@@ -63,9 +63,7 @@ class DenoiseTrainer:
                         loss.backward()
                         optimizer.step()
 
-                if n == 0 and (not is_train):  # รอบแรกของ val
-                    print("clean min/max:", float(clean.min()), float(clean.max()))
-                    print("noisy min/max:", float(noisy.min()), float(noisy.max()))
+
 
 
                 # metrics

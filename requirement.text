@@ -6,3 +6,5 @@ torchvision
 pillow
 torchsummary
 tqdm
+nibabel 
+numpy
